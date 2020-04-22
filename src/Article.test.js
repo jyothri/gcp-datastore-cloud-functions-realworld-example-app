@@ -57,7 +57,7 @@ describe('Article module', async () => {
     mlog.log(`Created article: [${JSON.stringify(createdArticle)}]`);
   });
 
-  it('should create new article wihtout tags', async () => {
+  it('should create new article without tags', async () => {
     createdArticleNoTags = await Article.create({
       title: casual.title,
       description: casual.description,
@@ -113,6 +113,7 @@ describe('Article module', async () => {
 
     // Delay a little before asserting on favoritedBy
     await delay(2000);
+    mlog.log('reading favoritedBy:', readerUser.username);
     const favoritedArticles = await Article.getAll({ favoritedBy: readerUser.username });
     expect(favoritedArticles).to.be.an('array').to.have.lengthOf(1);
     expectArticleSchema(favoritedArticles[0]);

@@ -126,18 +126,18 @@ module.exports = {
   },
 
   async getAll(options) {
-    let query = ds.createQuery(namespace, 'Article')
-      .order('createdAt', { descending: true });
+    const usersRef = db.collection('users');
+    let query = db.collection('articles');
     if (!options) {
       options = {};
     }
 
     if (options.tag) {
-      query = query.filter('tagList', '=', options.tag);
+      query = query.where('tagList', 'array-contains', options.tag);
     } else if (options.author) {
-      query = query.filter('author', '=', options.author);
+      query = query.where('author', '=', options.author);
     } else if (options.favoritedBy) {
-      query = query.filter('favoritedBy', '=', options.favoritedBy);
+      query = query.where('favoritedBy', 'array-contains', options.favoritedBy);
     }
 
     if (options.limit) {
@@ -149,13 +149,24 @@ module.exports = {
     if (options.offset) {
       query = query.offset(options.offset);
     }
+    query.orderBy('createdAt', 'desc');
 
-    const articles = (await query.run(query))[0];
+    const queryResult = await query.get();
+    const articles = [];
+    queryResult.forEach(article => {
+      articles.push(article.data());
+    });
+
+    const userPromises = [];
+    //const authors = [];
     for (const article of articles) {
-      delete article[ds.KEY];
-
-      // Get author info for this article
-      const authorUser = (await ds.get(ds.key({ namespace, path: ['User', article.author] })))[0];
+      userPromises.push(usersRef.doc(article.author).get());
+      //authors.push(await usersRef.doc(article.author).get());
+    }
+    const authors = await Promise.all(userPromises);
+    for (let i = 0; i < authors.length; i++) {
+      const authorUser = authors[i].data();
+      const article = articles[i];
       article.author = {
         username: authorUser.username,
         bio: authorUser.bio,
@@ -230,30 +241,36 @@ module.exports = {
     if (!aUsername) {
       throw new Error('User must be specified');
     }
-    const favoriterUser = (await ds.get(ds.key({ namespace, path: ['User', aUsername] })))[0];
-    if (!favoriterUser) {
-      throw new Error(`User does not exist: [${aUsername}]`);
+    const favoriterUserDoc = db.collection('users').doc(aUsername);
+    let findResult = await favoriterUserDoc.get();
+    if (!findResult.exists) {
+      throw new Error('User does not exist: [${aUsername}]');
     }
 
     // Get article to mutate
-    const article = (await ds.get(ds.key({ namespace, path: ['Article', aSlug] })))[0];
-    if (!article) {
-      throw new Error(`Article does not exist: [${aSlug}]`);
+    const articleRef = db.collection('articles').doc(aSlug);
+    findResult = await articleRef.get();
+    if (!findResult.exists) {
+      throw new Error('Article does not exist: [${aSlug}]');
     }
+    const article = findResult.data();
 
     // First remove this author if already in list, and add back if favoriting
     article.favoritedBy = article.favoritedBy.filter(e => e !== aUsername);
     if (aFavoriteBit) {
       article.favoritedBy.push(aUsername);
     }
-    await ds.update(article);
+    await articleRef.set(article);
     article.favorited = aFavoriteBit;
     article.favoritesCount = article.favoritedBy.length;
     delete article.favoritedBy;
     article[ds.KEY];
 
     // Get author data
-    const authorUser = (await ds.get(ds.key({ namespace, path: ['User', article.author] })))[0];
+    const authorUserDoc = db.collection('users').doc(article.author);
+    findResult = await authorUserDoc.get();
+    const authorUser = findResult.data();
+
     article.author = {
       username: authorUser.username,
       bio: authorUser.bio,
