@@ -1,14 +1,18 @@
+const { db } = require('./Firestore.js');
 const { ds, namespace } = require('./Datastore.js');
 const slugify = require('slugify');
+const Utils = require('./Utils.js');
 
 module.exports = {
 
   async create(aArticleData, aAuthorUsername) {
     // Get author data
-    const authorUser = (await ds.get(ds.key({ namespace, path: ['User', aAuthorUsername] })))[0];
-    if (!authorUser) {
-      throw new Error(`User does not exist: [${aAuthorUsername}]`);
+    const docRef = db.collection('users').doc(aAuthorUsername);
+    const findResult = await docRef.get();
+    if (!findResult.exists) {
+      throw new Error('User does not exist: [${aAuthorUsername}]');
     }
+    const authorUser = findResult.data();
 
     const articleSlug = slugify('' + aArticleData.title) + '-' + (Math.random() * Math.pow(36, 6) | 0).toString(36);
     const timestamp = (new Date()).getTime();
@@ -23,10 +27,8 @@ module.exports = {
       author: aAuthorUsername,
       favoritedBy: [],
     };
-    await ds.upsert({
-      key: ds.key({ namespace, path: ['Article', newArticle.slug] }),
-      data: newArticle,
-    });
+    const articleRef = db.collection('articles').doc(newArticle.slug);
+    await articleRef.set(newArticle);
     newArticle.author = {
       username: aAuthorUsername,
       bio: authorUser.bio,
@@ -40,10 +42,12 @@ module.exports = {
   },
 
   async update(aSlug, aMutation, aUpdaterUsername) {
-    const article = (await ds.get(ds.key({ namespace, path: ['Article', aSlug] })))[0];
-    if (!article) {
-      throw new Error(`Article not found: [${aSlug}]`);
+    const articleRef = db.collection('articles').doc(aSlug);
+    const findResult = await articleRef.get();
+    if (!findResult.exists) {
+      throw new Error('Article not found: [${aSlug}]');
     }
+    const article = findResult.data();
 
     if (aUpdaterUsername !== article.author) {
       throw new Error('Only author can update article');
@@ -58,23 +62,27 @@ module.exports = {
     if (aMutation.body) {
       article.body = aMutation.body;
     }
-    await ds.update(article);
+    await articleRef.set(article);
     return await this.get(aSlug, aUpdaterUsername);
   },
 
   async get(aSlug, aReaderUsername) {
-    const article = (await ds.get(ds.key({ namespace, path: ['Article', aSlug] })))[0];
-    if (!article) {
-      throw new Error(`Article not found: [${aSlug}]`);
+    let findResult;
+    const articleRef = db.collection('articles').doc(aSlug);
+    findResult = await articleRef.get();
+    if (!findResult.exists) {
+      throw new Error('Article not found: [${aSlug}]');
     }
+    const article = findResult.data();
     delete article[ds.KEY];
 
     // Get author data
-    const authorUser = (await ds.get(ds.key({ namespace, path: ['User', article.author] })))[0];
-    /* istanbul ignore next */
-    if (!authorUser) {
-      throw new Error(`User does not exist: [${article.author}]`);
+    const docRef = db.collection('users').doc(article.author);
+    findResult = await docRef.get();
+    if (!findResult.exists) {
+      throw new Error('User does not exist: [${aAuthorUsername}]');
     }
+    const authorUser = findResult.data();
     article.author = {
       username: authorUser.username,
       bio: authorUser.bio,
@@ -95,18 +103,25 @@ module.exports = {
   },
 
   async delete(aSlug, aUsername) {
-    const article = (await ds.get(ds.key({ namespace, path: ['Article', aSlug] })))[0];
-    if (!article) {
-      throw new Error(`Article not found: [${aSlug}]`);
+    let findResult;
+    const articleRef = db.collection('articles').doc(aSlug);
+    findResult = await articleRef.get();
+    if (!findResult.exists) {
+      throw new Error('Article not found: [${aSlug}]');
     }
-    const user = (await ds.get(ds.key({ namespace, path: ['User', aUsername] })))[0];
-    if (!user) {
-      throw new Error(`User does not exist: [${aUsername}]`);
+    const article = findResult.data();
+
+    const docRef = db.collection('users').doc(aUsername);
+    findResult = await docRef.get();
+    if (!findResult.exists) {
+      throw new Error('User does not exist: [${aUsername}]');
     }
+    const user = findResult.data();
+
     if (article.author !== user.username) {
       throw new Error(`Only author can delete article: [${article.author}]`);
     }
-    await ds.delete(ds.key({ namespace, path: ['Article', aSlug] }));
+    await articleRef.delete();
     return null;
   },
 
@@ -321,25 +336,11 @@ module.exports = {
   testutils: {
     async __deleteAllArticles() {
       /* istanbul ignore next */
-      if (!namespace.startsWith('test')) {
-        console.warn(`__deleteAllArticles: namespace does not start with "test" but is [${namespace}], skipping.`);
-        return;
-      }
-      const articleKeys = (await ds.createQuery(namespace, 'Article').select('__key__').run())[0];
-      articleKeys.forEach(async (articleKey) => {
-        await ds.delete(articleKey[ds.KEY]);
-      });
+      return Utils.deleteCollection(db, 'articles', 10);
     },
     async __deleteAllComments() {
       /* istanbul ignore next */
-      if (!namespace.startsWith('test')) {
-        console.warn(`__deleteAllComments: namespace does not start with "test" but is [${namespace}], skipping.`);
-        return;
-      }
-      const commentKeys = (await ds.createQuery(namespace, 'Comment').select('__key__').run())[0];
-      commentKeys.forEach(async (commentKey) => {
-        await ds.delete(commentKey[ds.KEY]);
-      });
+      return Utils.deleteCollection(db, 'comments', 10);
     },
   },
 
