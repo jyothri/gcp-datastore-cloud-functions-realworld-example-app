@@ -1,5 +1,4 @@
 const { db } = require('./Firestore.js');
-const { ds, namespace } = require('./Datastore.js');
 const slugify = require('slugify');
 const Utils = require('./Utils.js');
 
@@ -74,7 +73,6 @@ module.exports = {
       throw new Error('Article not found: [${aSlug}]');
     }
     const article = findResult.data();
-    delete article[ds.KEY];
 
     // Get author data
     const docRef = db.collection('users').doc(article.author);
@@ -186,10 +184,14 @@ module.exports = {
   },
 
   async getFeed(aUsername, options) {
-    const user = (await ds.get(ds.key({ namespace, path: ['User', aUsername] })))[0];
-    if (!user) {
+    const usersRef = db.collection('users');
+    // Get author data
+    const findResult = await usersRef.doc(aUsername).get();
+    if (!findResult.exists) {
       throw new Error(`User not found: [${aUsername}]`);
     }
+    const user = findResult.data();
+
     if (!options) {
       options = {};
     }
@@ -202,13 +204,13 @@ module.exports = {
 
     // For each followed user, get authored articles
     let articles = [];
-    for (let i = 0; i < user.following.length; ++i) {
-      const followedUser = (await ds.get(ds.key({ namespace, path: ['User', user.following[i]] })))[0];
-      const query = ds.createQuery(namespace, 'Article').filter('author', '=', user.following[i]);
+    for (const follow of user.following) {
+      const followedUser = (await usersRef.doc(follow).get()).data();
+      const query = db.collection('articles').where('author', '=', follow);
 
-      const articlesByThisAuthor = (await query.run())[0];
-      for (const article of articlesByThisAuthor) {
-        delete article[ds.KEY];
+      const articlesByThisAuthor = await query.get();
+      articlesByThisAuthor.forEach(articleResult => {
+        const article = articleResult.data();
         article.favorited = article.favoritedBy.includes(aUsername);
         article.favoritesCount = article.favoritedBy.length;
         delete article.favoritedBy;
@@ -219,7 +221,7 @@ module.exports = {
           following: true,
         };
         articles.push(article);
-      }
+      });
     }
 
     // Sort merged articles by createdAt descending
@@ -264,7 +266,6 @@ module.exports = {
     article.favorited = aFavoriteBit;
     article.favoritesCount = article.favoritedBy.length;
     delete article.favoritedBy;
-    article[ds.KEY];
 
     // Get author data
     const authorUserDoc = db.collection('users').doc(article.author);
@@ -282,7 +283,6 @@ module.exports = {
   },
 
   async createComment(aSlug, aCommentAuthorUsername, aCommentBody) {
-    const key = ds.key({ namespace, path: ['Article', aSlug, 'Comment'] });
     const timestamp = (new Date()).getTime();
     const commentData = {
       body: aCommentBody,
@@ -290,9 +290,9 @@ module.exports = {
       updatedAt: timestamp,
       author: aCommentAuthorUsername,
     };
-    await ds.insert({ key, data: commentData });
-    commentData.id = key.id;
-    const commentAuthorUser = (await ds.get(ds.key({ namespace, path: ['User', aCommentAuthorUsername] })))[0];
+    const commentReference = await db.collection('articles').doc(aSlug).collection('comments').add(commentData);
+    commentData.id = commentReference.id;
+    const commentAuthorUser = (await db.collection('users').doc(aCommentAuthorUsername).get()).data();
     commentData.author = {
       username: aCommentAuthorUsername,
       bio: commentAuthorUser.bio,
@@ -303,31 +303,33 @@ module.exports = {
   },
 
   async deleteComment(aSlug, aCommentId, aDeleterUsername) {
-    const commentKey = ds.key({ namespace, path: ['Article', aSlug, 'Comment', parseInt(aCommentId)] });
-    const comment = (await ds.get(commentKey))[0];
-    if (!comment) {
+    const commentReference = db.collection('articles').doc(aSlug).collection('comments').doc(aCommentId);
+    const commentSnapshot = await commentReference.get();
+    if (!commentSnapshot.exists) {
       throw new Error(`Comment not found: [${aSlug}/${aCommentId}]`);
     }
-
+    const comment = commentSnapshot.data();
     // Only comment's author can delete comment
     if (comment.author !== aDeleterUsername) {
       throw new Error('Only comment author can delete comment');
     }
-    await ds.delete(commentKey);
+    await commentReference.delete();
     return null;
   },
 
   async getAllComments(aSlug, aReaderUsername) {
-    let comments = (await ds.createQuery(namespace, 'Comment')
-      .hasAncestor(ds.key({ namespace, path: ['Article', aSlug] })).run())[0];
+    const commentResults = await db.collection('articles').doc(aSlug).collection('comments').get();
+    let comments = [];
+    commentResults.forEach(commentRef => {
+      const comment = commentRef.data();
+      comment.id = commentRef.id;
+      comments.push(comment);
+    });
     comments = comments.sort((a, b) => b.createdAt - a.createdAt);
 
     for (const comment of comments) {
-      comment.id = comment[ds.KEY].id;
-      delete comment[ds.KEY];
-
       // Get comment author info
-      const authorUser = (await ds.get(ds.key({ namespace, path: ['User', comment.author] })))[0];
+      const authorUser = (await db.collection('users').doc(comment.author).get()).data();
       comment.author = {
         username: authorUser.username,
         bio: authorUser.bio,
@@ -342,11 +344,11 @@ module.exports = {
   },
 
   async getAllTags() {
-    const tags = (await ds.createQuery(namespace, 'Article').select('tagList').run())[0];
+    const articles = await db.collection('articles').get();
     const dedupeObj = {};
-    for (let i = 0; i < tags.length; ++i) {
-      dedupeObj[tags[i].tagList] = 1;
-    }
+    articles.forEach(articleResult => {
+      dedupeObj[articleResult.data().tagList] = 1;
+    });
     return Object.keys(dedupeObj);
   },
 
