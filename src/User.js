@@ -73,20 +73,16 @@ module.exports = {
   async login(aUserData) {
     // Get user with this email
     const queryResult = await db.collection('users').where('email', '==', aUserData.email).get();
-    if (queryResult.empty) {
+    if (queryResult.empty || queryResult.size > 1) {
       throw new Error(`Email not found: [${aUserData.email}]`);
-    }
-
-    if (queryResult.size > 1) {
-      throw new Error(`Multiple entities for same Email: [${aUserData.email}]`);
     }
 
     let foundDoc;
     queryResult.forEach(doc => {
-      foundDoc = doc;
+      foundDoc = doc.data();
     });
 
-    const foundUser = foundDoc.data();
+    const foundUser = foundDoc;
     const passwordCheckResult = await bcrypt.compare(aUserData.password, foundUser.password);
     if (!passwordCheckResult) {
       throw new Error('Incorrect password');
