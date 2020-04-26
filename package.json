@@ -9,10 +9,10 @@
     "view-datastore": "google-cloud-gui --port 8083",
     "emulate:datastore": " gcloud beta emulators datastore start --project realworldgcp ",
     "emulate:functions": "sh emulate-functions.sh",
-    "prepublish": "npm run snyk-protect"
+    "prepare": "npm run snyk-protect"
   },
   "devDependencies": {
-    "@google-cloud/functions-emulator": "^1.0.0-beta.4",
+    "@google-cloud/functions-emulator": "^1.0.0-beta.6",
     "@google-cloud/functions-framework": "^1.2.1",
     "casual": "^1.5.17",
     "chai": "^4.1.2",
