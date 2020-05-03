@@ -6,13 +6,24 @@ module.exports = {
     es6: true,
   },
 
+  parser: '@typescript-eslint/parser',
+
   parserOptions: {
     ecmaVersion: 2017,
     sourceType: 'module',
   },
+	
+	plugins: [
+    "@typescript-eslint"
+  ],
 
   // The Rules (Keep them sorted)
-  extends: 'eslint:recommended',
+	extends: [
+    "eslint:recommended",
+    "plugin:@typescript-eslint/eslint-recommended",
+    "plugin:@typescript-eslint/recommended"
+  ],
+
   rules: {
     'comma-spacing': 'error',
     'indent': ['error', 2],

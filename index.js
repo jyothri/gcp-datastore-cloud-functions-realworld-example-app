@@ -1,1 +1,1 @@
-module.exports = require('./src/API.js');
+module.exports = require('./built/API.js');

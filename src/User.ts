@@ -1,14 +1,23 @@
-const { db } = require('./Firestore.js');
-const bcrypt = require('bcrypt');
-const jwt = require('jsonwebtoken');
-const Utils = require('./Utils.js');
+import * as bcrypt from 'bcrypt';
+import * as jwt from 'jsonwebtoken';
+import * as Utils from './Utils';
+import {db} from './Firestore';
 
 /* istanbul ignore next */
 const tokenSecret = process.env.SECRET ? process.env.SECRET : '3ee058420bc2';
 
+class User { username: string; email?: string; password?: string; bio: string; image: string; followers?: Array<string>; following?: boolean; token?: string; }
+
+async function verifyEmailIsNotTaken(aEmail): Promise<void> {
+  const queryResult = await db.collection('users').where('email', '==', aEmail).get();
+  if (!queryResult.empty) {
+    throw new Error(`Email already taken: [${aEmail}]`);
+  }
+}
+
 module.exports = {
 
-  async create(aUserData) {
+  async create(aUserData): Promise<User> {
     // Verify username is not taken
     const findResult = await db.collection('users').doc(aUserData.username).get();
     if (findResult.exists) {
@@ -19,25 +28,19 @@ module.exports = {
 
     // Add user
     const encryptedPassword = await bcrypt.hash(aUserData.password, 5);
-    const userRecord = {
-      username: aUserData.username,
-      email: aUserData.email,
-      password: encryptedPassword,
-      bio: '',
-      image: '',
-      followers: [],
-      following: [],
-    };
-
+    const userRecord: User = new User();
+    userRecord.username = aUserData.username;
+    userRecord.email = aUserData.email;
+    userRecord.password = encryptedPassword;
     const userRef = db.collection('users').doc(userRecord.username);
-    await userRef.set(userRecord);
+    await userRef.set(Object.assign({}, userRecord));
     delete userRecord.password;
     userRecord.token = this.mintToken(aUserData.username);
     userRecord.username = aUserData.username;
     return userRecord;
   },
 
-  async update(aCurrentUser, aUserMutation) {
+  async update(aCurrentUser, aUserMutation): Promise<User> {
     const docRef = db.collection('users').doc(aCurrentUser.username);
     const findResult = await docRef.get();
     if (!findResult.exists) {
@@ -70,7 +73,7 @@ module.exports = {
     };
   },
 
-  async login(aUserData) {
+  async login(aUserData): Promise<User> {
     // Get user with this email
     const queryResult = await db.collection('users').where('email', '==', aUserData.email).get();
     if (queryResult.empty || queryResult.size > 1) {
@@ -96,7 +99,7 @@ module.exports = {
     };
   },
 
-  async getProfile(aUsername, aCurrentUser) {
+  async getProfile(aUsername, aCurrentUser): Promise<User> {
     if (!aUsername) {
       throw new Error('User name must be specified');
     }
@@ -107,7 +110,7 @@ module.exports = {
       throw new Error(`User not found: [${aUsername}]`);
     }
 
-    const profile = {
+    const profile: User = {
       username: aUsername,
       bio: user.bio,
       image: user.image,
@@ -121,15 +124,15 @@ module.exports = {
     return profile;
   },
 
-  async followUser(aFollowerUsername, aFollowedUsername) {
+  async followUser(aFollowerUsername, aFollowedUsername): Promise<User> {
     return await this.mutateFollowing(aFollowerUsername, aFollowedUsername, true);
   },
 
-  async unfollowUser(aFollowerUsername, aFollowedUsername) {
+  async unfollowUser(aFollowerUsername, aFollowedUsername): Promise<User> {
     return await this.mutateFollowing(aFollowerUsername, aFollowedUsername, false);
   },
 
-  async mutateFollowing(aFollowerUsername, aFollowedUsername, aMutation) {
+  async mutateFollowing(aFollowerUsername, aFollowedUsername, aMutation): Promise<User> {
     // Add/remove "following" array of follower
     const followerDocRef = db.collection('users').doc(aFollowerUsername);
     const findResult = await followerDocRef.get();
@@ -175,7 +178,7 @@ module.exports = {
 
   // ===== Token managenement
 
-  async authenticateToken(aToken) {
+  async authenticateToken(aToken): Promise<User> {
     const decoded = jwt.verify(aToken, tokenSecret);
     const username = decoded.username;
     const docRef = db.collection('users').doc(decoded.username);
@@ -193,7 +196,7 @@ module.exports = {
     };
   },
 
-  mintToken(aUsername) {
+  mintToken(aUsername): string {
     return jwt.sign({
       username: aUsername
     }, tokenSecret, {
@@ -202,16 +205,9 @@ module.exports = {
   },
 
   testutils: {
-    async __deleteAllUsers() {
+    async __deleteAllUsers(): Promise<void> {
       /* istanbul ignore next */
       return Utils.deleteCollection(db, 'users', 10);
     },
   },
 };
-
-async function verifyEmailIsNotTaken(aEmail) {
-  const queryResult = await db.collection('users').where('email', '==', aEmail).get();
-  if (!queryResult.empty) {
-    throw new Error(`Email already taken: [${aEmail}]`);
-  }
-}

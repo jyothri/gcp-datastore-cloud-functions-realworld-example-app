@@ -1,8 +1,9 @@
 {
   "scripts": {
-    "test": "npm run lint && npm run test:unit && npm run test:api",
-    "lint": "eslint index.js src/",
-    "test:unit": "DATASTORE_NAMESPACE=test-unit-`date +%s` nyc mocha --opts .mochaopts ./src/*.test.js",
+    "tsc": "tsc",
+    "test": "npm run lint && npm run tsc && npm run test:unit && npm run test:api",
+    "lint": "eslint index.js src/ --ext .ts",
+    "test:unit": "DATASTORE_NAMESPACE=test-unit-`date +%s` nyc mocha --opts .mochaopts ./built/*.test.js",
     "test:api": "./run-api-tests.sh",
     "deploy": "./deploy-to-cloud.sh",
     "snyk-protect": "snyk protect",
@@ -14,6 +15,8 @@
   "devDependencies": {
     "@google-cloud/functions-emulator": "^1.0.0-beta.6",
     "@google-cloud/functions-framework": "^1.2.1",
+    "@typescript-eslint/eslint-plugin": "^2.29.0",
+    "@typescript-eslint/parser": "^2.29.0",
     "casual": "^1.5.17",
     "chai": "^4.1.2",
     "eslint": "^6.8.0",
@@ -23,7 +26,8 @@
     "mochawesome": "^6.1.0",
     "newman": "^4.6.0",
     "nodemon": "^2.0.3",
-    "nyc": "^15.0.1"
+    "nyc": "^15.0.1",
+    "typescript": "^3.8.3"
   },
   "dependencies": {
     "bcrypt": "^3.0.0",

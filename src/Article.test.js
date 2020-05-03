@@ -1,4 +1,4 @@
-const User = require('./User.js');
+const User = require('./User');
 const Article = require('./Article.js');
 const expect = require('chai').expect;
 const casual = require('casual');
